@@ -1,0 +1,15 @@
+artifact_uri: file:c:/Users/EduardoSulz/OneDrive - OHI/Documents/Projects/AAAA Projeto
+  Pessoal/projeto-diabetes/mlruns/0/97bbdd32d273406f9e9eb1868a197dfe/artifacts
+end_time: 1772307140756
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 97bbdd32d273406f9e9eb1868a197dfe
+run_name: XGBoost
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1772307134383
+status: 3
+tags: []
+user_id: EduardoSulz

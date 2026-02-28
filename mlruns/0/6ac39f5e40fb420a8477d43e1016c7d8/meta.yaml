@@ -1,0 +1,15 @@
+artifact_uri: file:c:/Users/EduardoSulz/OneDrive - OHI/Documents/Projects/AAAA Projeto
+  Pessoal/projeto-diabetes/mlruns/0/6ac39f5e40fb420a8477d43e1016c7d8/artifacts
+end_time: 1772307151303
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 6ac39f5e40fb420a8477d43e1016c7d8
+run_name: KNN
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1772307146171
+status: 3
+tags: []
+user_id: EduardoSulz

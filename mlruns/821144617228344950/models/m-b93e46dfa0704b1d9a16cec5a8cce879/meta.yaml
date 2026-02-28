@@ -1,0 +1,11 @@
+artifact_location: file:c:/Users/EduardoSulz/OneDrive - OHI/Documents/Projects/AAAA
+  Projeto Pessoal/projeto-diabetes/mlruns/821144617228344950/models/m-b93e46dfa0704b1d9a16cec5a8cce879/artifacts
+creation_timestamp: 1772307434356
+experiment_id: '821144617228344950'
+last_updated_timestamp: 1772307439602
+model_id: m-b93e46dfa0704b1d9a16cec5a8cce879
+model_type: null
+name: model
+source_run_id: eb53fa9f2f1b4a6f9d48357797307e3b
+status: 2
+status_message: null

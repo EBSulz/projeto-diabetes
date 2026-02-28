@@ -1,0 +1,23 @@
+artifact_path: file:c:/Users/EduardoSulz/OneDrive - OHI/Documents/Projects/AAAA Projeto
+  Pessoal/projeto-diabetes/mlruns/821144617228344950/models/m-2aa3eaf6a2c043e4893822ea3cbddb8e/artifacts
+flavors:
+  python_function:
+    data: model.ubj
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.xgboost
+    python_version: 3.13.9
+  xgboost:
+    code: null
+    data: model.ubj
+    model_class: xgboost.sklearn.XGBClassifier
+    model_format: ubj
+    xgb_version: 3.2.0
+mlflow_version: 3.10.0
+model_id: m-2aa3eaf6a2c043e4893822ea3cbddb8e
+model_size_bytes: 111803
+model_uuid: m-2aa3eaf6a2c043e4893822ea3cbddb8e
+prompts: null
+run_id: 49eed28e0e5b4a839e8e7d9a3feea118
+utc_time_created: '2026-02-28 19:37:20.185568'

@@ -1,0 +1,15 @@
+artifact_uri: file:c:/Users/EduardoSulz/OneDrive - OHI/Documents/Projects/AAAA Projeto
+  Pessoal/projeto-diabetes/mlruns/821144617228344950/1cc3ff0f7de04a3291c4016aec5968b0/artifacts
+end_time: 1772307458179
+entry_point_name: ''
+experiment_id: '821144617228344950'
+lifecycle_stage: active
+run_id: 1cc3ff0f7de04a3291c4016aec5968b0
+run_name: SVM
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1772307448092
+status: 3
+tags: []
+user_id: EduardoSulz

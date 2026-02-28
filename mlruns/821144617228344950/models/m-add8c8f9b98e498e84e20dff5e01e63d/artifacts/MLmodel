@@ -1,0 +1,24 @@
+artifact_path: file:c:/Users/EduardoSulz/OneDrive - OHI/Documents/Projects/AAAA Projeto
+  Pessoal/projeto-diabetes/mlruns/821144617228344950/models/m-add8c8f9b98e498e84e20dff5e01e63d/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.13.9
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.7.2
+    skops_trusted_types: null
+mlflow_version: 3.10.0
+model_id: m-add8c8f9b98e498e84e20dff5e01e63d
+model_size_bytes: 7767
+model_uuid: m-add8c8f9b98e498e84e20dff5e01e63d
+prompts: null
+run_id: 88d20e4feb96424682d9a9aee493ead1
+utc_time_created: '2026-02-28 19:37:38.544845'

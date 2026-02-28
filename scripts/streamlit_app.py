@@ -160,6 +160,62 @@ def get_best_model_data():
         return None
 
 
+@st.cache_data
+def get_available_models():
+    """Get list of available models from local backup and MLflow"""
+    available_models = []
+    
+    # Check local backup directory
+    model_dir = project_root / config['models']['model_dir']
+    if model_dir.exists():
+        for model_file in model_dir.glob("*.pkl"):
+            if model_file.name != "scaler.pkl":
+                model_name = model_file.stem.replace('_', '_').replace('-', '_')
+                # Convert to proper case
+                if 'logistic' in model_name.lower():
+                    model_name = "Logistic_Regression"
+                elif 'random' in model_name.lower() or 'forest' in model_name.lower():
+                    model_name = "Random_Forest"
+                elif 'xgboost' in model_name.lower() or 'xgb' in model_name.lower():
+                    model_name = "XGBoost"
+                elif 'svm' in model_name.lower():
+                    model_name = "SVM"
+                elif 'knn' in model_name.lower():
+                    model_name = "KNN"
+                
+                if model_name not in [m['name'] for m in available_models]:
+                    available_models.append({
+                        'name': model_name,
+                        'source': 'local',
+                        'file': str(model_file)
+                    })
+    
+    # Also try to get from MLflow for comparison
+    try:
+        comparison_df = get_model_comparison_data()
+        if comparison_df is not None:
+            for model_name in comparison_df['Model'].values:
+                if model_name not in [m['name'] for m in available_models]:
+                    available_models.append({
+                        'name': model_name,
+                        'source': 'mlflow'
+                    })
+    except:
+        pass
+    
+    # Default models if nothing found
+    if not available_models:
+        available_models = [
+            {'name': 'Logistic_Regression', 'source': 'default'},
+            {'name': 'Random_Forest', 'source': 'default'},
+            {'name': 'XGBoost', 'source': 'default'},
+            {'name': 'SVM', 'source': 'default'},
+            {'name': 'KNN', 'source': 'default'},
+        ]
+    
+    return available_models
+
+
 def load_model_from_local_backup(model_name: str):
     """Try to load model from local backup directory"""
     import joblib
@@ -564,30 +620,134 @@ def show_model_performance():
     st.json(best_model_info['params'])
 
 
+def get_available_models_list():
+    """Get list of available model names"""
+    available_models = []
+    
+    # Check local backup directory
+    model_dir = project_root / config['models']['model_dir']
+    if model_dir.exists():
+        for model_file in model_dir.glob("*.pkl"):
+            if model_file.name != "scaler.pkl":
+                model_name = model_file.stem
+                # Normalize model name
+                if 'logistic' in model_name.lower():
+                    model_name = "Logistic_Regression"
+                elif 'random' in model_name.lower() or 'forest' in model_name.lower():
+                    model_name = "Random_Forest"
+                elif 'xgboost' in model_name.lower() or 'xgb' in model_name.lower():
+                    model_name = "XGBoost"
+                elif 'svm' in model_name.lower():
+                    model_name = "SVM"
+                elif 'knn' in model_name.lower():
+                    model_name = "KNN"
+                
+                if model_name not in available_models:
+                    available_models.append(model_name)
+    
+    # Also try to get from MLflow
+    try:
+        comparison_df = get_model_comparison_data()
+        if comparison_df is not None:
+            for model_name in comparison_df['Model'].values:
+                if model_name not in available_models:
+                    available_models.append(model_name)
+    except:
+        pass
+    
+    # Default models if nothing found
+    if not available_models:
+        available_models = ['Logistic_Regression', 'Random_Forest', 'XGBoost', 'SVM', 'KNN']
+    
+    return sorted(available_models)
+
+
 def show_prediction(df_processed):
     """Display prediction page with enhanced user interface"""
     st.header("🔮 Diabetes Risk Prediction")
     st.markdown("Enter your information below to get a personalized diabetes risk assessment.")
     
+    # Get available models and best model info
+    available_models = get_available_models_list()
     best_model_info = get_best_model_data()
     
-    if best_model_info is None:
+    if not available_models:
         st.warning("⚠️ No models found. Please run training first using: `python scripts/train.py`")
         return
     
-    # Load model and scaler
+    # Model selection dropdown
+    st.subheader("🤖 Model Selection")
+    
+    # Set default to best model if available, otherwise first in list
+    default_model = best_model_info['model_name'] if best_model_info and best_model_info['model_name'] in available_models else available_models[0]
+    default_index = available_models.index(default_model) if default_model in available_models else 0
+    
+    selected_model_name = st.selectbox(
+        "Choose a model for prediction:",
+        options=available_models,
+        index=default_index,
+        help="Select which machine learning model to use for the diabetes risk prediction. The best model is selected by default."
+    )
+    
+    # Show model info
+    col1, col2 = st.columns(2)
+    with col1:
+        if selected_model_name == default_model and best_model_info:
+            st.info(f"⭐ **Best Model** (ROC-AUC: {best_model_info['metrics'].get('test_roc_auc', 0):.4f})")
+        else:
+            # Try to get metrics for selected model
+            try:
+                comparison_df = get_model_comparison_data()
+                if comparison_df is not None:
+                    model_metrics = comparison_df[comparison_df['Model'] == selected_model_name]
+                    if not model_metrics.empty:
+                        roc_auc = model_metrics.iloc[0]['Test ROC-AUC']
+                        st.info(f"📊 ROC-AUC: {roc_auc:.4f}")
+            except:
+                pass
+    
+    with col2:
+        # Check if model exists locally
+        model_dir = project_root / config['models']['model_dir']
+        model_file = model_dir / f"{selected_model_name.lower().replace('_', '_')}.pkl"
+        if model_file.exists():
+            st.success("💾 Available locally")
+        else:
+            st.info("☁️ Loading from MLflow")
+    
+    # Load selected model and scaler
     try:
-        with st.spinner("🔄 Loading model..."):
+        with st.spinner(f"🔄 Loading {selected_model_name}..."):
             # Try local backup first (works better for Streamlit Cloud)
-            model = load_model_from_local_backup(best_model_info['model_name'])
+            model = load_model_from_local_backup(selected_model_name)
             
             # If local backup doesn't exist, try MLflow
             if model is None:
                 st.info("📦 Local backup not found, trying MLflow...")
-                model = load_model_from_mlflow(
-                    best_model_info['run_id'],
-                    best_model_info['model_name']
-                )
+                # Try to get run ID for this model from MLflow
+                try:
+                    client = MlflowClient(tracking_uri=mlflow.get_tracking_uri())
+                    experiment = client.get_experiment_by_name(experiment_name)
+                    if experiment:
+                        runs = client.search_runs(
+                            experiment.experiment_id,
+                            filter_string=f"tags.mlflow.runName = '{selected_model_name}'",
+                            max_results=1
+                        )
+                        if runs:
+                            run_id = runs[0].info.run_id
+                            model = load_model_from_mlflow(run_id, selected_model_name)
+                        else:
+                            # Fallback: try best model if selected not found
+                            if best_model_info:
+                                st.warning(f"⚠️ {selected_model_name} not found in MLflow. Using best model instead.")
+                                model = load_model_from_mlflow(best_model_info['run_id'], best_model_info['model_name'])
+                            else:
+                                raise Exception(f"Model {selected_model_name} not found in MLflow and no best model available.")
+                except Exception as mlflow_error:
+                    st.error(f"❌ Could not load model: {str(mlflow_error)}")
+                    st.warning("💡 Please ensure models are trained and saved locally.")
+                    return
         
         # Load scaler
         scaler = ScalerManager()

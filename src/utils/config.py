@@ -17,11 +17,17 @@ def load_config(config_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary with configuration
     """
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config_data = yaml.safe_load(f)
+    
+    # Ensure we return a dict, not None
+    if config_data is None:
+        config_data = {}
+    elif not isinstance(config_data, dict):
+        raise ValueError(f"Configuration file must contain a dictionary, got {type(config_data)}")
     
     logger.info(f"Configuration loaded from {config_path}")
-    return config
+    return config_data
 
 
 def get_project_root() -> Path:

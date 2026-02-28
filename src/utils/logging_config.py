@@ -2,9 +2,10 @@
 import logging
 import sys
 from pathlib import Path
+from typing import List, Union
 
 
-def setup_logging(log_level: str = "INFO", log_file: str = None):
+def setup_logging(log_level: str = "INFO", log_file: str = None) -> None:
     """
     Setup logging configuration.
     
@@ -21,8 +22,10 @@ def setup_logging(log_level: str = "INFO", log_file: str = None):
     log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     date_format = '%Y-%m-%d %H:%M:%S'
     
-    # Configure handlers
-    handlers = [logging.StreamHandler(sys.stdout)]
+    # Configure handlers - use Union type to handle both handler types
+    handlers: List[Union[logging.StreamHandler, logging.FileHandler]] = [
+        logging.StreamHandler(sys.stdout)
+    ]
     if log_file:
         handlers.append(logging.FileHandler(log_file))
     

@@ -3,7 +3,8 @@ import sys
 from pathlib import Path
 
 # Add project root to path (go up one level from scripts/ to project root)
-project_root = Path(__file__).parent.parent
+# Use resolve() to get absolute path to avoid path resolution issues
+project_root = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(project_root))
 
 import streamlit as st
@@ -19,7 +20,7 @@ from mlflow.tracking import MlflowClient
 from src.data.load_data import load_dataset
 from src.data.preprocessing import engineer_features, encode_categorical_features, ScalerManager
 from src.models.evaluate import get_best_model, get_model_comparison
-from src.utils.config import load_config, get_project_root
+from src.utils.config import load_config
 
 # Page configuration
 st.set_page_config(
@@ -29,9 +30,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Load configuration
-project_root = get_project_root()
-config = load_config(project_root / "configs" / "config.yaml")
+# Load configuration - use project_root calculated at top of file
+config = load_config(str(project_root / "configs" / "config.yaml"))
 
 # Initialize MLflow
 mlflow.set_tracking_uri(config['mlflow']['tracking_uri'])
@@ -41,7 +41,16 @@ experiment_name = config['mlflow']['experiment_name']
 @st.cache_data
 def load_data():
     """Load and cache the dataset"""
-    data_path = project_root / config['data']['raw_data_path']
+    # Resolve path relative to project root
+    data_path = (project_root / config['data']['raw_data_path']).resolve()
+    
+    # Check if file exists and provide helpful error message
+    if not data_path.exists():
+        st.error(f"Data file not found at: {data_path}")
+        st.info(f"Project root: {project_root}")
+        st.info(f"Looking for: {config['data']['raw_data_path']}")
+        st.stop()
+    
     df = load_dataset(str(data_path))
     return df
 
@@ -121,7 +130,7 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Select Page",
-        ["📊 Data Overview", "🤖 Model Performance", "🔮 Prediction", "📈 Model Comparison"]
+        ["🔮 Prediction", "📊 Data Overview", "🤖 Model Performance", "📈 Model Comparison"]
     )
     
     # Load data
@@ -259,13 +268,14 @@ def show_model_performance():
 
 
 def show_prediction(df_processed):
-    """Display prediction page"""
-    st.header("🔮 Diabetes Prediction")
+    """Display prediction page with enhanced user interface"""
+    st.header("🔮 Diabetes Risk Prediction")
+    st.markdown("Enter your information below to get a personalized diabetes risk assessment.")
     
     best_model_info = get_best_model_data()
     
     if best_model_info is None:
-        st.warning("No models found. Please run training first.")
+        st.warning("⚠️ No models found. Please run training first using: `python scripts/train.py`")
         return
     
     # Load model and scaler
@@ -280,74 +290,187 @@ def show_prediction(df_processed):
         if scaler_path.exists():
             scaler.load(str(scaler_path))
         else:
-            st.error("Scaler not found. Please run training first.")
+            st.error("❌ Scaler not found. Please run training first.")
             return
         
         # Get feature columns
         feature_columns = [col for col in df_processed.columns if col != 'Diabético']
         
     except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
+        st.error(f"❌ Error loading model: {str(e)}")
         return
     
-    # Input form
-    st.subheader("Enter Patient Information")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        weight = st.number_input("Weight (kg)", min_value=30.0, max_value=200.0, value=75.0, step=0.1)
-        height = st.number_input("Height (cm)", min_value=100.0, max_value=250.0, value=170.0, step=0.1)
-    
-    with col2:
-        hair_color = st.selectbox(
-            "Hair Color",
-            ["Careca", "Castanho", "Loiro", "Preto", "Ruivo"]
-        )
-        bmi = weight / ((height / 100) ** 2)
-        st.metric("BMI", f"{bmi:.2f}")
-    
-    # Predict button
-    if st.button("Predict Diabetes Risk", type="primary"):
-        try:
-            prediction, probability = predict_diabetes(
-                weight, height, hair_color, model, scaler, feature_columns
+    # Create a form for better UX
+    with st.form("prediction_form"):
+        st.subheader("📝 Enter Your Information")
+        
+        # Create two columns for inputs
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**Physical Measurements**")
+            weight = st.number_input(
+                "Weight (kg)", 
+                min_value=30.0, 
+                max_value=200.0, 
+                value=75.0, 
+                step=0.1,
+                help="Enter your weight in kilograms"
+            )
+            height = st.number_input(
+                "Height (cm)", 
+                min_value=100.0, 
+                max_value=250.0, 
+                value=170.0, 
+                step=0.1,
+                help="Enter your height in centimeters"
+            )
+        
+        with col2:
+            st.markdown("**Personal Information**")
+            hair_color = st.selectbox(
+                "Hair Color",
+                ["Careca", "Castanho", "Loiro", "Preto", "Ruivo"],
+                help="Select your hair color"
             )
             
-            st.markdown("---")
-            st.subheader("Prediction Result")
+            # Calculate and display BMI
+            bmi = weight / ((height / 100) ** 2)
+            bmi_category = ""
+            if bmi < 18.5:
+                bmi_category = "Underweight"
+            elif bmi < 25:
+                bmi_category = "Normal"
+            elif bmi < 30:
+                bmi_category = "Overweight"
+            else:
+                bmi_category = "Obese"
             
-            col1, col2 = st.columns(2)
+            st.metric("BMI", f"{bmi:.2f}", delta=bmi_category)
+        
+        # Submit button
+        submitted = st.form_submit_button("🔍 Predict Diabetes Risk", type="primary", use_container_width=True)
+    
+    # Show prediction results when form is submitted
+    if submitted:
+        try:
+            with st.spinner("🔄 Analyzing your data..."):
+                prediction, probability = predict_diabetes(
+                    weight, height, hair_color, model, scaler, feature_columns
+                )
+            
+            st.markdown("---")
+            st.subheader("📊 Prediction Results")
+            
+            # Main result display
+            col1, col2, col3 = st.columns(3)
             
             with col1:
+                diabetes_prob = probability[1] * 100
+                no_diabetes_prob = probability[0] * 100
+                
                 if prediction == 1:
-                    st.error("⚠️ **High Risk of Diabetes**")
+                    st.error("⚠️ **HIGH RISK**")
+                    st.markdown(f"**Risk Level:** High")
                 else:
-                    st.success("✅ **Low Risk of Diabetes**")
+                    st.success("✅ **LOW RISK**")
+                    st.markdown(f"**Risk Level:** Low")
             
             with col2:
                 st.metric(
-                    "Probability of Diabetes",
-                    f"{probability[1] * 100:.2f}%"
+                    "Diabetes Probability",
+                    f"{diabetes_prob:.2f}%",
+                    delta=f"{diabetes_prob - 50:.2f}%" if diabetes_prob > 50 else None
                 )
             
-            # Probability visualization
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=['No Diabetes', 'Diabetes'],
-                    y=[probability[0] * 100, probability[1] * 100],
-                    marker_color=['green', 'red']
+            with col3:
+                st.metric(
+                    "No Diabetes Probability",
+                    f"{no_diabetes_prob:.2f}%",
+                    delta=f"{no_diabetes_prob - 50:.2f}%" if no_diabetes_prob > 50 else None
                 )
-            ])
-            fig.update_layout(
-                title="Prediction Probabilities",
-                yaxis_title="Probability (%)",
-                xaxis_title="Outcome"
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # Visualizations
+            st.markdown("### 📈 Risk Visualization")
+            
+            # Create two columns for visualizations
+            viz_col1, viz_col2 = st.columns(2)
+            
+            with viz_col1:
+                # Probability bar chart
+                fig_bar = go.Figure(data=[
+                    go.Bar(
+                        x=['No Diabetes', 'Diabetes'],
+                        y=[no_diabetes_prob, diabetes_prob],
+                        marker_color=['#2ecc71', '#e74c3c'],
+                        text=[f'{no_diabetes_prob:.1f}%', f'{diabetes_prob:.1f}%'],
+                        textposition='auto',
+                    )
+                ])
+                fig_bar.update_layout(
+                    title="Prediction Probabilities",
+                    yaxis_title="Probability (%)",
+                    xaxis_title="Outcome",
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+            
+            with viz_col2:
+                # Gauge chart for risk level
+                fig_gauge = go.Figure(go.Indicator(
+                    mode = "gauge+number+delta",
+                    value = diabetes_prob,
+                    domain = {'x': [0, 1], 'y': [0, 1]},
+                    title = {'text': "Diabetes Risk (%)"},
+                    delta = {'reference': 50},
+                    gauge = {
+                        'axis': {'range': [None, 100]},
+                        'bar': {'color': "darkred" if diabetes_prob > 50 else "darkgreen"},
+                        'steps': [
+                            {'range': [0, 30], 'color': "lightgreen"},
+                            {'range': [30, 70], 'color': "yellow"},
+                            {'range': [70, 100], 'color': "lightcoral"}
+                        ],
+                        'threshold': {
+                            'line': {'color': "red", 'width': 4},
+                            'thickness': 0.75,
+                            'value': 50
+                        }
+                    }
+                ))
+                fig_gauge.update_layout(height=400)
+                st.plotly_chart(fig_gauge, use_container_width=True)
+            
+            # Additional information
+            st.markdown("### ℹ️ Additional Information")
+            info_col1, info_col2, info_col3 = st.columns(3)
+            
+            with info_col1:
+                st.info(f"**Model Used:** {best_model_info['model_name']}")
+            
+            with info_col2:
+                st.info(f"**Model Accuracy:** {best_model_info['metrics'].get('test_accuracy', 0)*100:.1f}%")
+            
+            with info_col3:
+                st.info(f"**BMI Category:** {bmi_category}")
+            
+            # Risk interpretation
+            st.markdown("### 💡 Risk Interpretation")
+            if diabetes_prob < 30:
+                st.success("**Low Risk:** Your current profile suggests a low risk of diabetes. Continue maintaining a healthy lifestyle with regular exercise and a balanced diet.")
+            elif diabetes_prob < 50:
+                st.warning("**Moderate Risk:** Your profile indicates a moderate risk. Consider consulting with a healthcare provider and making lifestyle improvements.")
+            else:
+                st.error("**High Risk:** Your profile suggests a higher risk of diabetes. We strongly recommend consulting with a healthcare provider for a comprehensive assessment and personalized advice.")
+            
+            # Disclaimer
+            st.markdown("---")
+            st.caption("⚠️ **Disclaimer:** This prediction is based on machine learning models and should not replace professional medical advice. Please consult with a healthcare provider for accurate diagnosis and treatment.")
             
         except Exception as e:
-            st.error(f"Error making prediction: {str(e)}")
+            st.error(f"❌ Error making prediction: {str(e)}")
+            st.exception(e)
 
 
 def show_model_comparison():

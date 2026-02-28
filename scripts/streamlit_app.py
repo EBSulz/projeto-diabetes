@@ -162,7 +162,10 @@ def get_best_model_data():
 
 def load_model_from_mlflow(run_id: str, model_name: str):
     """Load model from MLflow with error handling and fallback"""
+    client = MlflowClient(tracking_uri=mlflow.get_tracking_uri())
+    
     try:
+        # First try the runs:/ URI format
         model_uri = f"runs:/{run_id}/model"
         
         if 'XGBoost' in model_name:
@@ -170,77 +173,120 @@ def load_model_from_mlflow(run_id: str, model_name: str):
         else:
             return mlflow.sklearn.load_model(model_uri)
     except Exception as e:
-        # If the specific run fails, try to get the latest run
-        st.warning(f"⚠️ Could not load model from run {run_id}. Trying to find latest model...")
-        
+        # If runs:/ format fails, try using direct artifact path
         try:
-            client = MlflowClient(tracking_uri=mlflow.get_tracking_uri())
-            experiment = client.get_experiment_by_name(experiment_name)
+            # Get the run to find artifact path
+            run = client.get_run(run_id)
+            artifact_path = run.info.artifact_uri
             
-            if experiment is None:
-                # Try to list all experiments for debugging
-                try:
-                    experiments = client.search_experiments()
-                    exp_names = [exp.name for exp in experiments]
-                    raise ValueError(
-                        f"Experiment '{experiment_name}' not found. "
-                        f"Available experiments: {exp_names}"
-                    )
-                except Exception as list_error:
-                    raise ValueError(
-                        f"Experiment '{experiment_name}' not found. "
-                        f"Error listing experiments: {str(list_error)}"
-                    )
+            # Try direct file path
+            if artifact_path.startswith("file://"):
+                artifact_path = artifact_path.replace("file://", "")
             
-            # Get all runs sorted by creation time (newest first)
-            runs = client.search_runs(
-                experiment.experiment_id,
-                order_by=["start_time DESC"],
-                max_results=5  # Get a few runs to try
-            )
+            model_path = Path(artifact_path) / "model"
             
-            if not runs:
-                raise ValueError(f"No runs found in experiment '{experiment_name}'")
+            # Check if model directory exists
+            if not model_path.exists():
+                raise FileNotFoundError(f"Model directory not found at: {model_path}")
             
-            # Try each run until one works
-            last_error = None
-            for run in runs:
-                try:
-                    run_id_to_try = run.info.run_id
-                    run_model_name = run.data.tags.get('mlflow.runName', run_id_to_try)
-                    
-                    st.info(f"🔄 Trying model: {run_model_name} (Run ID: {run_id_to_try})")
-                    
-                    model_uri = f"runs:/{run_id_to_try}/model"
-                    
-                    if 'XGBoost' in run_model_name:
-                        model = mlflow.xgboost.load_model(model_uri)
-                    else:
-                        model = mlflow.sklearn.load_model(model_uri)
-                    
-                    st.success(f"✅ Successfully loaded model: {run_model_name}")
-                    return model
-                    
-                except Exception as run_error:
-                    last_error = run_error
-                    continue
-            
-            # If all runs failed
-            raise Exception(
-                f"Tried {len(runs)} runs but none could be loaded. "
-                f"Last error: {str(last_error)}"
-            )
+            # Try loading from direct path
+            if 'XGBoost' in model_name:
+                return mlflow.xgboost.load_model(str(model_path))
+            else:
+                return mlflow.sklearn.load_model(str(model_path))
                 
-        except Exception as fallback_error:
-            # Provide detailed error information
-            error_msg = f"Failed to load model from run {run_id}.\n"
-            error_msg += f"Fallback also failed: {str(fallback_error)}\n\n"
-            error_msg += f"MLflow Tracking URI: {mlflow.get_tracking_uri()}\n"
-            error_msg += f"Experiment Name: {experiment_name}\n"
-            error_msg += f"Project Root: {project_root}\n\n"
-            error_msg += "Please run training first: `python scripts/train.py`"
+        except Exception as direct_error:
+            # If direct path also fails, try to get the latest run
+            st.warning(f"⚠️ Could not load model from run {run_id}. Trying to find latest model...")
             
-            raise Exception(error_msg)
+            try:
+                experiment = client.get_experiment_by_name(experiment_name)
+                
+                if experiment is None:
+                    # Try to list all experiments for debugging
+                    try:
+                        experiments = client.search_experiments()
+                        exp_names = [exp.name for exp in experiments]
+                        raise ValueError(
+                            f"Experiment '{experiment_name}' not found. "
+                            f"Available experiments: {exp_names}"
+                        )
+                    except Exception as list_error:
+                        raise ValueError(
+                            f"Experiment '{experiment_name}' not found. "
+                            f"Error listing experiments: {str(list_error)}"
+                        )
+                
+                # Get all runs sorted by creation time (newest first)
+                runs = client.search_runs(
+                    experiment.experiment_id,
+                    order_by=["start_time DESC"],
+                    max_results=10  # Get more runs to try
+                )
+                
+                if not runs:
+                    raise ValueError(f"No runs found in experiment '{experiment_name}'")
+                
+                # Try each run until one works
+                last_error = None
+                for run in runs:
+                    try:
+                        run_id_to_try = run.info.run_id
+                        run_model_name = run.data.tags.get('mlflow.runName', run_id_to_try)
+                        
+                        st.info(f"🔄 Trying model: {run_model_name} (Run ID: {run_id_to_try})")
+                        
+                        # Try runs:/ URI first
+                        try:
+                            model_uri = f"runs:/{run_id_to_try}/model"
+                            if 'XGBoost' in run_model_name:
+                                model = mlflow.xgboost.load_model(model_uri)
+                            else:
+                                model = mlflow.sklearn.load_model(model_uri)
+                            st.success(f"✅ Successfully loaded model: {run_model_name}")
+                            return model
+                        except:
+                            # If runs:/ fails, try direct artifact path
+                            artifact_uri = run.info.artifact_uri
+                            if artifact_uri.startswith("file://"):
+                                artifact_uri = artifact_uri.replace("file://", "")
+                            
+                            model_path = Path(artifact_uri) / "model"
+                            if model_path.exists():
+                                if 'XGBoost' in run_model_name:
+                                    model = mlflow.xgboost.load_model(str(model_path))
+                                else:
+                                    model = mlflow.sklearn.load_model(str(model_path))
+                                st.success(f"✅ Successfully loaded model: {run_model_name} (from direct path)")
+                                return model
+                            else:
+                                raise FileNotFoundError(f"Model not found at {model_path}")
+                        
+                    except Exception as run_error:
+                        last_error = run_error
+                        continue
+                
+                # If all runs failed
+                raise Exception(
+                    f"Tried {len(runs)} runs but none could be loaded. "
+                    f"Last error: {str(last_error)}. "
+                    f"This might indicate that model artifacts were not saved properly during training."
+                )
+                    
+            except Exception as fallback_error:
+                # Provide detailed error information
+                error_msg = f"Failed to load model from run {run_id}.\n"
+                error_msg += f"Direct path attempt failed: {str(direct_error)}\n"
+                error_msg += f"Fallback also failed: {str(fallback_error)}\n\n"
+                error_msg += f"MLflow Tracking URI: {mlflow.get_tracking_uri()}\n"
+                error_msg += f"Experiment Name: {experiment_name}\n"
+                error_msg += f"Project Root: {project_root}\n\n"
+                error_msg += "**Possible solutions:**\n"
+                error_msg += "1. Re-run training: `python scripts/train.py`\n"
+                error_msg += "2. Check if model artifacts exist in mlruns/ directory\n"
+                error_msg += "3. Verify MLflow tracking URI is correct"
+                
+                raise Exception(error_msg)
 
 
 def predict_diabetes(weight: float, height: float, hair_color: str, model, scaler, feature_columns):

@@ -41,15 +41,76 @@ experiment_name = config['mlflow']['experiment_name']
 @st.cache_data
 def load_data():
     """Load and cache the dataset"""
-    # Resolve path relative to project root
-    data_path = (project_root / config['data']['raw_data_path']).resolve()
+    # Try multiple possible paths in order of preference
+    possible_paths = [
+        # Primary: relative to project root from config
+        project_root / config['data']['raw_data_path'],
+        # Secondary: explicit path from project root
+        project_root / "data" / "raw" / "diabetes_dataset.xlsx",
+        # Tertiary: relative to current working directory
+        Path.cwd() / config['data']['raw_data_path'],
+        Path.cwd() / "data" / "raw" / "diabetes_dataset.xlsx",
+        # Fallback: root directory (in case file wasn't moved)
+        project_root / "diabetes_dataset.xlsx",
+        Path.cwd() / "diabetes_dataset.xlsx",
+    ]
     
-    # Check if file exists and provide helpful error message
-    if not data_path.exists():
-        st.error(f"Data file not found at: {data_path}")
-        st.info(f"Project root: {project_root}")
-        st.info(f"Looking for: {config['data']['raw_data_path']}")
+    data_path = None
+    tried_paths = []
+    
+    for path in possible_paths:
+        # Resolve the path
+        try:
+            if path.is_absolute():
+                resolved_path = path
+            else:
+                # Try relative to project root first, then current directory
+                resolved_path = (project_root / path).resolve()
+                if not resolved_path.exists():
+                    resolved_path = (Path.cwd() / path).resolve()
+        except Exception:
+            resolved_path = path
+        
+        tried_paths.append(str(resolved_path))
+        
+        if resolved_path.exists() and resolved_path.is_file():
+            data_path = resolved_path
+            break
+    
+    # Final check with helpful error message
+    if data_path is None or not data_path.exists():
+        st.error("❌ **Data file not found!**")
+        st.markdown("---")
+        
+        # Check if running on Streamlit Cloud
+        is_streamlit_cloud = "/mount/src/" in str(project_root) or "/mount/src/" in str(Path.cwd())
+        
+        if is_streamlit_cloud:
+            st.warning("🌐 **Running on Streamlit Cloud detected**")
+            st.info("On Streamlit Cloud, ensure `diabetes_dataset.xlsx` is committed to your repository in the `data/raw/` directory.")
+        
+        st.info(f"**Project root:** `{project_root}`")
+        st.info(f"**Current working directory:** `{Path.cwd()}`")
+        st.info(f"**Expected path:** `{config['data']['raw_data_path']}`")
+        st.markdown("---")
+        st.warning("**Tried the following paths:**")
+        for i, path_str in enumerate(tried_paths, 1):
+            path_obj = Path(path_str)
+            exists = "✅" if path_obj.exists() and path_obj.is_file() else "❌"
+            st.text(f"{i}. {exists} {path_str}")
+        st.markdown("---")
+        st.error("**Solution:** Please ensure `diabetes_dataset.xlsx` is located at:")
+        st.code(f"{project_root / 'data' / 'raw' / 'diabetes_dataset.xlsx'}", language=None)
+        
+        if not is_streamlit_cloud:
+            st.info("💡 **Tip:** If the file is in the project root, move it to `data/raw/` directory.")
+        else:
+            st.info("💡 **For Streamlit Cloud:** Commit the file to your repository and redeploy.")
+        
         st.stop()
+    
+    # Log successful path for debugging
+    st.sidebar.success(f"✅ Data loaded from: `{data_path}`")
     
     df = load_dataset(str(data_path))
     return df

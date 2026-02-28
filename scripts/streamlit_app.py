@@ -145,13 +145,55 @@ def get_best_model_data():
 
 
 def load_model_from_mlflow(run_id: str, model_name: str):
-    """Load model from MLflow"""
-    model_uri = f"runs:/{run_id}/model"
-    
-    if 'XGBoost' in model_name:
-        return mlflow.xgboost.load_model(model_uri)
-    else:
-        return mlflow.sklearn.load_model(model_uri)
+    """Load model from MLflow with error handling and fallback"""
+    try:
+        model_uri = f"runs:/{run_id}/model"
+        
+        if 'XGBoost' in model_name:
+            return mlflow.xgboost.load_model(model_uri)
+        else:
+            return mlflow.sklearn.load_model(model_uri)
+    except Exception as e:
+        # If the specific run fails, try to get the latest run
+        st.warning(f"⚠️ Could not load model from run {run_id}. Trying to find latest model...")
+        
+        try:
+            client = MlflowClient()
+            experiment = client.get_experiment_by_name(experiment_name)
+            
+            if experiment is None:
+                raise ValueError(f"Experiment '{experiment_name}' not found")
+            
+            # Get all runs sorted by creation time (newest first)
+            runs = client.search_runs(
+                experiment.experiment_id,
+                order_by=["start_time DESC"],
+                max_results=1
+            )
+            
+            if not runs:
+                raise ValueError("No runs found in experiment")
+            
+            # Use the latest run
+            latest_run = runs[0]
+            latest_run_id = latest_run.info.run_id
+            latest_model_name = latest_run.data.tags.get('mlflow.runName', latest_run_id)
+            
+            st.info(f"✅ Using latest model: {latest_model_name} (Run ID: {latest_run_id})")
+            
+            model_uri = f"runs:/{latest_run_id}/model"
+            
+            if 'XGBoost' in latest_model_name:
+                return mlflow.xgboost.load_model(model_uri)
+            else:
+                return mlflow.sklearn.load_model(model_uri)
+                
+        except Exception as fallback_error:
+            raise Exception(
+                f"Failed to load model from run {run_id}. "
+                f"Fallback also failed: {str(fallback_error)}. "
+                f"Please run training first: `python scripts/train.py`"
+            )
 
 
 def predict_diabetes(weight: float, height: float, hair_color: str, model, scaler, feature_columns):
@@ -341,24 +383,54 @@ def show_prediction(df_processed):
     
     # Load model and scaler
     try:
-        model = load_model_from_mlflow(
-            best_model_info['run_id'],
-            best_model_info['model_name']
-        )
+        with st.spinner("🔄 Loading model..."):
+            model = load_model_from_mlflow(
+                best_model_info['run_id'],
+                best_model_info['model_name']
+            )
         
+        # Load scaler
         scaler = ScalerManager()
         scaler_path = project_root / config['models']['scaler_path']
-        if scaler_path.exists():
-            scaler.load(str(scaler_path))
+        
+        if not scaler_path.exists():
+            # Try alternative paths
+            alt_paths = [
+                project_root / "models" / "scaler.pkl",
+                Path.cwd() / "models" / "scaler.pkl",
+                project_root / config['models']['scaler_path'],
+            ]
+            
+            scaler_found = False
+            for alt_path in alt_paths:
+                if alt_path.exists():
+                    scaler.load(str(alt_path))
+                    scaler_found = True
+                    break
+            
+            if not scaler_found:
+                st.error("❌ Scaler not found. Please run training first using: `python scripts/train.py`")
+                st.info(f"Looking for scaler at: {scaler_path}")
+                return
         else:
-            st.error("❌ Scaler not found. Please run training first.")
-            return
+            scaler.load(str(scaler_path))
         
         # Get feature columns
         feature_columns = [col for col in df_processed.columns if col != 'Diabético']
         
+        st.success("✅ Model and scaler loaded successfully!")
+        
     except Exception as e:
-        st.error(f"❌ Error loading model: {str(e)}")
+        st.error(f"❌ **Error loading model:** {str(e)}")
+        st.markdown("---")
+        st.info("**Troubleshooting steps:**")
+        st.markdown("""
+        1. **Run training first:** Execute `python scripts/train.py` to train models and save artifacts
+        2. **Check MLflow tracking URI:** Ensure it's set correctly in `configs/config.yaml`
+        3. **Verify experiment exists:** Check that the experiment name matches in the config
+        4. **Check file paths:** Ensure the scaler file exists at `models/scaler.pkl`
+        """)
+        st.code("python scripts/train.py", language="bash")
         return
     
     # Create a form for better UX

@@ -62,12 +62,19 @@ ipython_config.py
 mlruns/
 mlartifacts/
 
-# Model artifacts
-models/*.pkl
+# Model artifacts - allow .pkl files to be committed (needed for Streamlit Cloud)
+# models/*.pkl
 models/*.joblib
 models/*.pth
 models/*.h5
 !models/.gitkeep
+# Allow specific model files for deployment
+!models/*_regression.pkl
+!models/*_forest.pkl
+!models/*boost.pkl
+!models/*svm.pkl
+!models/*knn.pkl
+!models/scaler.pkl
 
 # Data (keep structure but ignore data files)
 data/raw/*.xlsx

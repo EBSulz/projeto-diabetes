@@ -164,19 +164,34 @@ def load_model_from_local_backup(model_name: str):
     """Try to load model from local backup directory"""
     import joblib
     
-    # Try different possible model file names
+    # Try different possible model file names and formats
     model_names_to_try = [
-        model_name.lower().replace('_', '_'),
-        model_name.lower().replace('_', '-'),
-        model_name,
+        model_name.lower().replace('_', '_'),  # logistic_regression
+        model_name.lower(),  # logistic_regression (already lowercase)
+        model_name,  # Logistic_Regression
+        model_name.replace('_', '-').lower(),  # logistic-regression
     ]
     
+    model_dir = project_root / config['models']['model_dir']
+    
     for name in model_names_to_try:
-        model_path = project_root / config['models']['model_dir'] / f"{name}.pkl"
+        # Try .pkl extension
+        model_path = model_dir / f"{name}.pkl"
         if model_path.exists():
             try:
                 model = joblib.load(str(model_path))
-                st.success(f"✅ Loaded model from local backup: {model_name}")
+                st.sidebar.success(f"✅ Loaded {model_name} from local backup")
+                return model
+            except Exception as e:
+                st.sidebar.warning(f"⚠️ Could not load {name}.pkl: {str(e)}")
+                continue
+        
+        # Try .joblib extension
+        model_path = model_dir / f"{name}.joblib"
+        if model_path.exists():
+            try:
+                model = joblib.load(str(model_path))
+                st.sidebar.success(f"✅ Loaded {model_name} from local backup")
                 return model
             except Exception as e:
                 continue
@@ -563,10 +578,16 @@ def show_prediction(df_processed):
     # Load model and scaler
     try:
         with st.spinner("🔄 Loading model..."):
-            model = load_model_from_mlflow(
-                best_model_info['run_id'],
-                best_model_info['model_name']
-            )
+            # Try local backup first (works better for Streamlit Cloud)
+            model = load_model_from_local_backup(best_model_info['model_name'])
+            
+            # If local backup doesn't exist, try MLflow
+            if model is None:
+                st.info("📦 Local backup not found, trying MLflow...")
+                model = load_model_from_mlflow(
+                    best_model_info['run_id'],
+                    best_model_info['model_name']
+                )
         
         # Load scaler
         scaler = ScalerManager()

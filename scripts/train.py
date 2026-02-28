@@ -105,12 +105,16 @@ def main():
         import joblib
         model_dir = project_root / config['models']['model_dir']
         model_dir.mkdir(parents=True, exist_ok=True)
-        model_file = model_dir / f"{model_name.lower().replace('_', '_')}.pkl"
+        
+        # Use consistent naming: lowercase with underscores
+        model_filename = model_name.lower().replace('_', '_') + ".pkl"
+        model_file = model_dir / model_filename
         
         # Save model using joblib (works for both sklearn and xgboost)
         try:
             joblib.dump(model, str(model_file))
-            logger.info(f"Model saved locally to: {model_file}")
+            logger.info(f"✅ Model saved locally to: {model_file}")
+            logger.info(f"   This file should be committed to GitHub for Streamlit Cloud deployment")
         except Exception as e:
             logger.warning(f"Could not save model locally: {str(e)}")
     

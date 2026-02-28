@@ -16,6 +16,7 @@ from src.models.train import (
     train_logistic_regression, train_random_forest, train_xgboost,
     train_svm, train_knn, log_model_mlflow
 )
+import xgboost as xgb
 from src.utils.config import load_config, get_project_root
 from src.utils.logging_config import setup_logging
 
@@ -99,6 +100,19 @@ def main():
         
         log_model_mlflow(model, model_name, params, metrics_train, metrics_test)
         trained_models[model_name] = model
+        
+        # Also save model locally as backup (for Streamlit Cloud compatibility)
+        import joblib
+        model_dir = project_root / config['models']['model_dir']
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_file = model_dir / f"{model_name.lower().replace('_', '_')}.pkl"
+        
+        # Save model using joblib (works for both sklearn and xgboost)
+        try:
+            joblib.dump(model, str(model_file))
+            logger.info(f"Model saved locally to: {model_file}")
+        except Exception as e:
+            logger.warning(f"Could not save model locally: {str(e)}")
     
     logger.info("Training pipeline completed successfully")
     logger.info("View results in MLflow UI: mlflow ui")

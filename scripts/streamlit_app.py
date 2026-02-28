@@ -160,8 +160,37 @@ def get_best_model_data():
         return None
 
 
+def load_model_from_local_backup(model_name: str):
+    """Try to load model from local backup directory"""
+    import joblib
+    
+    # Try different possible model file names
+    model_names_to_try = [
+        model_name.lower().replace('_', '_'),
+        model_name.lower().replace('_', '-'),
+        model_name,
+    ]
+    
+    for name in model_names_to_try:
+        model_path = project_root / config['models']['model_dir'] / f"{name}.pkl"
+        if model_path.exists():
+            try:
+                model = joblib.load(str(model_path))
+                st.success(f"✅ Loaded model from local backup: {model_name}")
+                return model
+            except Exception as e:
+                continue
+    
+    return None
+
+
 def load_model_from_mlflow(run_id: str, model_name: str):
     """Load model from MLflow with error handling and fallback"""
+    # First try local backup
+    local_model = load_model_from_local_backup(model_name)
+    if local_model is not None:
+        return local_model
+    
     client = MlflowClient(tracking_uri=mlflow.get_tracking_uri())
     
     try:

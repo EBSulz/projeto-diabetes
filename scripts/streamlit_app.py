@@ -33,9 +33,25 @@ st.set_page_config(
 # Load configuration - use project_root calculated at top of file
 config = load_config(str(project_root / "configs" / "config.yaml"))
 
-# Initialize MLflow
-mlflow.set_tracking_uri(config['mlflow']['tracking_uri'])
+# Initialize MLflow - resolve tracking URI relative to project root
+tracking_uri = config['mlflow']['tracking_uri']
+# If it's a file URI, resolve it relative to project root
+if tracking_uri.startswith("file:"):
+    # Extract the path part (remove "file:" prefix)
+    uri_path = tracking_uri.replace("file:", "").strip()
+    if not Path(uri_path).is_absolute():
+        # Make it relative to project root
+        resolved_uri = (project_root / uri_path).resolve()
+        tracking_uri = f"file:{resolved_uri}"
+    else:
+        tracking_uri = f"file:{Path(uri_path).resolve()}"
+
+mlflow.set_tracking_uri(tracking_uri)
 experiment_name = config['mlflow']['experiment_name']
+
+# Debug info (can be removed in production)
+st.sidebar.info(f"🔍 MLflow URI: `{tracking_uri}`")
+st.sidebar.info(f"🔍 Project Root: `{project_root}`")
 
 
 @st.cache_data
@@ -158,42 +174,73 @@ def load_model_from_mlflow(run_id: str, model_name: str):
         st.warning(f"⚠️ Could not load model from run {run_id}. Trying to find latest model...")
         
         try:
-            client = MlflowClient()
+            client = MlflowClient(tracking_uri=mlflow.get_tracking_uri())
             experiment = client.get_experiment_by_name(experiment_name)
             
             if experiment is None:
-                raise ValueError(f"Experiment '{experiment_name}' not found")
+                # Try to list all experiments for debugging
+                try:
+                    experiments = client.search_experiments()
+                    exp_names = [exp.name for exp in experiments]
+                    raise ValueError(
+                        f"Experiment '{experiment_name}' not found. "
+                        f"Available experiments: {exp_names}"
+                    )
+                except Exception as list_error:
+                    raise ValueError(
+                        f"Experiment '{experiment_name}' not found. "
+                        f"Error listing experiments: {str(list_error)}"
+                    )
             
             # Get all runs sorted by creation time (newest first)
             runs = client.search_runs(
                 experiment.experiment_id,
                 order_by=["start_time DESC"],
-                max_results=1
+                max_results=5  # Get a few runs to try
             )
             
             if not runs:
-                raise ValueError("No runs found in experiment")
+                raise ValueError(f"No runs found in experiment '{experiment_name}'")
             
-            # Use the latest run
-            latest_run = runs[0]
-            latest_run_id = latest_run.info.run_id
-            latest_model_name = latest_run.data.tags.get('mlflow.runName', latest_run_id)
+            # Try each run until one works
+            last_error = None
+            for run in runs:
+                try:
+                    run_id_to_try = run.info.run_id
+                    run_model_name = run.data.tags.get('mlflow.runName', run_id_to_try)
+                    
+                    st.info(f"🔄 Trying model: {run_model_name} (Run ID: {run_id_to_try})")
+                    
+                    model_uri = f"runs:/{run_id_to_try}/model"
+                    
+                    if 'XGBoost' in run_model_name:
+                        model = mlflow.xgboost.load_model(model_uri)
+                    else:
+                        model = mlflow.sklearn.load_model(model_uri)
+                    
+                    st.success(f"✅ Successfully loaded model: {run_model_name}")
+                    return model
+                    
+                except Exception as run_error:
+                    last_error = run_error
+                    continue
             
-            st.info(f"✅ Using latest model: {latest_model_name} (Run ID: {latest_run_id})")
-            
-            model_uri = f"runs:/{latest_run_id}/model"
-            
-            if 'XGBoost' in latest_model_name:
-                return mlflow.xgboost.load_model(model_uri)
-            else:
-                return mlflow.sklearn.load_model(model_uri)
+            # If all runs failed
+            raise Exception(
+                f"Tried {len(runs)} runs but none could be loaded. "
+                f"Last error: {str(last_error)}"
+            )
                 
         except Exception as fallback_error:
-            raise Exception(
-                f"Failed to load model from run {run_id}. "
-                f"Fallback also failed: {str(fallback_error)}. "
-                f"Please run training first: `python scripts/train.py`"
-            )
+            # Provide detailed error information
+            error_msg = f"Failed to load model from run {run_id}.\n"
+            error_msg += f"Fallback also failed: {str(fallback_error)}\n\n"
+            error_msg += f"MLflow Tracking URI: {mlflow.get_tracking_uri()}\n"
+            error_msg += f"Experiment Name: {experiment_name}\n"
+            error_msg += f"Project Root: {project_root}\n\n"
+            error_msg += "Please run training first: `python scripts/train.py`"
+            
+            raise Exception(error_msg)
 
 
 def predict_diabetes(weight: float, height: float, hair_color: str, model, scaler, feature_columns):

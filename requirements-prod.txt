@@ -1,3 +1,6 @@
+# Production dependencies
+# Install with: pip install -r requirements-prod.txt
+
 # Core dependencies
 pandas>=2.0.0
 numpy>=1.24.0
@@ -11,10 +14,4 @@ pyyaml>=6.0
 streamlit>=1.28.0
 plotly>=5.17.0
 
-# Development dependencies
-pytest>=7.0.0
-pytest-cov>=4.0.0
-black>=23.0.0
-flake8>=6.0.0
-isort>=5.12.0
-mypy>=1.0.0
+# Note: Testing and development tools are NOT included in production

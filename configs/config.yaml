@@ -1,0 +1,64 @@
+# Diabetes Prediction Project Configuration
+
+# Data paths
+data:
+  raw_data_path: "data/raw/diabetes_dataset.xlsx"
+  processed_data_path: "data/processed"
+  train_data_path: "data/processed/train.csv"
+  test_data_path: "data/processed/test.csv"
+
+# Model paths
+models:
+  model_dir: "models"
+  scaler_path: "models/scaler.pkl"
+
+# MLflow configuration
+mlflow:
+  tracking_uri: "file:./mlruns"
+  experiment_name: "Diabetes_Prediction"
+
+# Training configuration
+training:
+  test_size: 0.2
+  random_state: 42
+  stratify: true
+
+# Model hyperparameters
+models_config:
+  logistic_regression:
+    C: 1.0
+    max_iter: 1000
+    random_state: 42
+  
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 5
+    min_samples_leaf: 2
+    random_state: 42
+  
+  xgboost:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    random_state: 42
+    eval_metric: "logloss"
+  
+  svm:
+    C: 1.0
+    kernel: "rbf"
+    gamma: "scale"
+    random_state: 42
+    probability: true
+  
+  knn:
+    n_neighbors: 5
+    weights: "distance"
+    algorithm: "auto"
+
+# Logging
+logging:
+  level: "INFO"
+  log_file: "logs/training.log"

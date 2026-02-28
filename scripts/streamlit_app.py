@@ -227,6 +227,17 @@ def load_model_from_mlflow(run_id: str, model_name: str):
                 if not runs:
                     raise ValueError(f"No runs found in experiment '{experiment_name}'")
                 
+                # Get the tracking URI base path
+                tracking_uri_base = mlflow.get_tracking_uri()
+                if tracking_uri_base.startswith("file:"):
+                    tracking_uri_base = tracking_uri_base.replace("file:", "").strip()
+                    if not Path(tracking_uri_base).is_absolute():
+                        tracking_uri_base = (project_root / tracking_uri_base).resolve()
+                    else:
+                        tracking_uri_base = Path(tracking_uri_base).resolve()
+                else:
+                    tracking_uri_base = project_root / "mlruns"
+                
                 # Try each run until one works
                 last_error = None
                 for run in runs:
@@ -246,12 +257,29 @@ def load_model_from_mlflow(run_id: str, model_name: str):
                             st.success(f"✅ Successfully loaded model: {run_model_name}")
                             return model
                         except:
-                            # If runs:/ fails, try direct artifact path
-                            artifact_uri = run.info.artifact_uri
-                            if artifact_uri.startswith("file://"):
-                                artifact_uri = artifact_uri.replace("file://", "")
+                            # If runs:/ fails, try constructing path from tracking URI
+                            # Format: mlruns/{experiment_id}/{run_id}/artifacts/model
+                            experiment_id = experiment.experiment_id
                             
-                            model_path = Path(artifact_uri) / "model"
+                            # Try path relative to tracking URI base
+                            model_path = tracking_uri_base / str(experiment_id) / run_id_to_try / "artifacts" / "model"
+                            
+                            if not model_path.exists():
+                                # Try alternative: use artifact_uri but resolve relative to project
+                                artifact_uri = run.info.artifact_uri
+                                if artifact_uri.startswith("file://"):
+                                    artifact_uri = artifact_uri.replace("file://", "")
+                                
+                                artifact_path = Path(artifact_uri)
+                                
+                                # If artifact path is absolute but doesn't exist, try relative to project root
+                                if artifact_path.is_absolute() and not artifact_path.exists():
+                                    # Extract just the run directory name
+                                    run_dir_name = run_id_to_try
+                                    model_path = tracking_uri_base / str(experiment_id) / run_dir_name / "artifacts" / "model"
+                                else:
+                                    model_path = artifact_path / "model"
+                            
                             if model_path.exists():
                                 if 'XGBoost' in run_model_name:
                                     model = mlflow.xgboost.load_model(str(model_path))
@@ -266,25 +294,54 @@ def load_model_from_mlflow(run_id: str, model_name: str):
                         last_error = run_error
                         continue
                 
-                # If all runs failed
-                raise Exception(
-                    f"Tried {len(runs)} runs but none could be loaded. "
-                    f"Last error: {str(last_error)}. "
-                    f"This might indicate that model artifacts were not saved properly during training."
-                )
+                # If all runs failed, check if mlruns directory exists and has content
+                mlruns_path = tracking_uri_base
+                has_mlruns = mlruns_path.exists() if isinstance(mlruns_path, Path) else False
+                
+                error_details = f"Tried {len(runs)} runs but none could be loaded.\n"
+                error_details += f"Last error: {str(last_error)}\n\n"
+                
+                if not has_mlruns:
+                    error_details += f"❌ MLruns directory not found at: {mlruns_path}\n"
+                else:
+                    error_details += f"✅ MLruns directory exists at: {mlruns_path}\n"
+                    # Check if any artifacts exist
+                    artifact_dirs = list(mlruns_path.glob("*/artifacts/model"))
+                    if artifact_dirs:
+                        error_details += f"⚠️ Found {len(artifact_dirs)} model artifact directories, but couldn't load them.\n"
+                    else:
+                        error_details += f"❌ No model artifact directories found.\n"
+                
+                error_details += "\n**Solution:** Please run training to create model artifacts:\n"
+                error_details += "```bash\npython scripts/train.py\n```"
+                
+                raise Exception(error_details)
                     
             except Exception as fallback_error:
                 # Provide detailed error information
-                error_msg = f"Failed to load model from run {run_id}.\n"
-                error_msg += f"Direct path attempt failed: {str(direct_error)}\n"
-                error_msg += f"Fallback also failed: {str(fallback_error)}\n\n"
-                error_msg += f"MLflow Tracking URI: {mlflow.get_tracking_uri()}\n"
-                error_msg += f"Experiment Name: {experiment_name}\n"
-                error_msg += f"Project Root: {project_root}\n\n"
-                error_msg += "**Possible solutions:**\n"
-                error_msg += "1. Re-run training: `python scripts/train.py`\n"
-                error_msg += "2. Check if model artifacts exist in mlruns/ directory\n"
-                error_msg += "3. Verify MLflow tracking URI is correct"
+                error_msg = "❌ **Model Loading Failed**\n\n"
+                error_msg += f"**Original run ID:** {run_id}\n"
+                error_msg += f"**Direct path error:** {str(direct_error)}\n"
+                error_msg += f"**Fallback error:** {str(fallback_error)}\n\n"
+                error_msg += "**Environment Info:**\n"
+                error_msg += f"- MLflow Tracking URI: `{mlflow.get_tracking_uri()}`\n"
+                error_msg += f"- Experiment Name: `{experiment_name}`\n"
+                error_msg += f"- Project Root: `{project_root}`\n\n"
+                error_msg += "**🔧 Solution:**\n\n"
+                error_msg += "The model artifacts are missing. Please retrain the models:\n\n"
+                error_msg += "```bash\n"
+                error_msg += "# Make sure you're in the project root directory\n"
+                error_msg += "cd \"C:\\Users\\EduardoSulz\\OneDrive - OHI\\Documents\\Projects\\AAAA Projeto Pessoal\\projeto-diabetes\"\n\n"
+                error_msg += "# Activate your conda environment\n"
+                error_msg += "conda activate base\n\n"
+                error_msg += "# Run training\n"
+                error_msg += "python scripts/train.py\n"
+                error_msg += "```\n\n"
+                error_msg += "This will:\n"
+                error_msg += "1. Train all models\n"
+                error_msg += "2. Save model artifacts to MLflow\n"
+                error_msg += "3. Save the scaler for predictions\n\n"
+                error_msg += "After training completes, refresh this page."
                 
                 raise Exception(error_msg)
 

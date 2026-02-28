@@ -77,11 +77,11 @@ def log_model_mlflow(
         for metric_name, metric_value in metrics_test.items():
             mlflow.log_metric(f"test_{metric_name}", metric_value)
         
-        # Log model
+        # Log model (using 'name' parameter instead of deprecated 'artifact_path')
         if isinstance(model, xgb.XGBClassifier):
-            mlflow.xgboost.log_model(model, "model")
+            mlflow.xgboost.log_model(model, name="model")
         else:
-            mlflow.sklearn.log_model(model, "model")
+            mlflow.sklearn.log_model(model, name="model")
         
         logger.info(f"{model_name} logged to MLflow")
         logger.info(f"Test metrics: {metrics_test}")
